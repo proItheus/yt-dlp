@@ -177,7 +177,7 @@ class BilibiliBaseIE(InfoExtractor):
 
         return self._download_json(
             'https://api.bilibili.com/x/player/wbi/playurl', bvid,
-            query=self._sign_wbi(params, bvid), headers=headers, note=note)['data']
+            query=self._sign_wbi(params, bvid), headers={**(headers or {}), **self._HEADERS}, note=note)['data']
 
     def json2srt(self, json_data):
         srt_data = ''
@@ -659,7 +659,7 @@ class BiliBiliIE(BilibiliBaseIE):
         video_id, prefix = self._match_valid_url(url).group('id', 'prefix')
         if not self._get_cookies('https://api.bilibili.com').get('buvid3'):
             self._set_cookie('.bilibili.com', 'buvid3', f'{uuid.uuid4()}infoc')
-        headers = self.geo_verification_headers()
+        headers = {**self._HEADERS, **self.geo_verification_headers()}
         webpage, urlh = self._download_webpage_handle(url, video_id, headers=headers)
         if not self._match_valid_url(urlh.url):
             return self.url_result(urlh.url)
@@ -922,7 +922,7 @@ class BiliBiliBangumiIE(BilibiliBaseIE):
         episode_id = self._match_id(url)
         if not self._get_cookies('https://api.bilibili.com').get('buvid3'):
             self._set_cookie('.bilibili.com', 'buvid3', f'{uuid.uuid4()}infoc')
-        headers = self.geo_verification_headers()
+        headers = {**self._HEADERS, **self.geo_verification_headers()}
         webpage = self._download_webpage(url, episode_id, headers=headers)
 
         if '您所在的地区无法观看本片' in webpage:
@@ -1756,6 +1756,7 @@ class BilibiliCategoryIE(InfoExtractor):
     IE_NAME = 'Bilibili category extractor'
     _MAX_RESULTS = 1000000
     _VALID_URL = r'https?://(?:www\.)?bilibili\.com/v/[a-zA-Z]+\/[a-zA-Z]+'
+    _HEADERS = {'Referer': 'https://www.bilibili.com/'}
     _TESTS = [{
         'url': 'https://www.bilibili.com/v/kichiku/mad',
         'info_dict': {
@@ -1771,7 +1772,8 @@ class BilibiliCategoryIE(InfoExtractor):
     def _fetch_page(self, api_url, num_pages, query, page_num):
         parsed_json = self._download_json(
             api_url, query, query={'Search_key': query, 'pn': page_num},
-            note=f'Extracting results from page {page_num} of {num_pages}')
+            note=f'Extracting results from page {page_num} of {num_pages}',
+            headers=self._HEADERS)
 
         video_list = traverse_obj(parsed_json, ('data', 'archives'), expected_type=list)
         if not video_list:
@@ -1802,7 +1804,8 @@ class BilibiliCategoryIE(InfoExtractor):
         rid_value = rid_map[category][subcategory]
 
         api_url = 'https://api.bilibili.com/x/web-interface/newlist?rid=%d&type=1&ps=20&jsonp=jsonp' % rid_value
-        page_json = self._download_json(api_url, query, query={'Search_key': query, 'pn': '1'})
+        page_json = self._download_json(api_url, query, query={'Search_key': query, 'pn': '1'},
+                                         headers=self._HEADERS)
         page_data = traverse_obj(page_json, ('data', 'page'), expected_type=dict)
         count, size = int_or_none(page_data.get('count')), int_or_none(page_data.get('size'))
         if count is None or not size:
@@ -1824,6 +1827,7 @@ class BiliBiliSearchIE(SearchInfoExtractor):
     IE_DESC = 'Bilibili video search'
     _MAX_RESULTS = 100000
     _SEARCH_KEY = 'bilisearch'
+    _HEADERS = {'Referer': 'https://www.bilibili.com/'}
     _TESTS = [{
         'url': 'bilisearch3:靡烟 出道一年，我怎么还在等你单推的女人睡觉后开播啊',
         'playlist_count': 3,
@@ -1869,7 +1873,7 @@ class BiliBiliSearchIE(SearchInfoExtractor):
                     'search_type': 'video',
                     'tids': 0,
                     'highlight': 1,
-                })['data'].get('result')
+                }, headers=self._HEADERS)['data'].get('result')
             if not videos:
                 break
             for video in videos:
