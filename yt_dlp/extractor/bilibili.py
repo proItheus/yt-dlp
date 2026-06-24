@@ -1363,6 +1363,9 @@ class BilibiliSpaceVideoIE(BilibiliSpaceBaseIE):
 
     def _real_extract(self, url):
         playlist_id, is_video_url = self._match_valid_url(url).group('id', 'video')
+        # The space API needs a clean buvid3, untainted by buvid4 from _init_buvid
+        self._set_cookie('.bilibili.com', 'buvid3', self._generate_buvid3())
+        self._downloader.cookiejar.clear('.bilibili.com', '/', 'buvid4')
         if not is_video_url:
             self.to_screen('A channel URL was given. Only the channel\'s videos will be downloaded. '
                            'To download audios, add a "/upload/audio" to the URL')
@@ -1377,20 +1380,20 @@ class BilibiliSpaceVideoIE(BilibiliSpaceBaseIE):
                 'pn': page_idx + 1,
                 'ps': 30,
                 'tid': 0,
-                'web_location': 1550101,
+                'web_location': 333.1387,
                 'dm_img_list': '[]',
-                'dm_img_str': base64.b64encode(
-                    ''.join(random.choices(string.printable, k=random.randint(16, 64))).encode())[:-2].decode(),
-                'dm_cover_img_str': base64.b64encode(
-                    ''.join(random.choices(string.printable, k=random.randint(32, 128))).encode())[:-2].decode(),
-                'dm_img_inter': '{"ds":[],"wh":[6093,6631,31],"of":[430,760,380]}',
+                'dm_img_str': self._random_dm_img(16, 64),
+                'dm_cover_img_str': self._random_dm_img(32, 128),
+                'dm_img_inter': '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
             }
 
             try:
                 response = self._download_json(
                     'https://api.bilibili.com/x/space/wbi/arc/search', playlist_id,
                     query=self._sign_wbi(query, playlist_id),
-                    note=f'Downloading space page {page_idx}', headers={'Referer': url})
+                    note=f'Downloading space page {page_idx}',
+                    headers={'Referer': f'https://space.bilibili.com/{playlist_id}',
+                             'Origin': 'https://space.bilibili.com'})
             except ExtractorError as e:
                 if isinstance(e.cause, HTTPError) and e.cause.status == 412:
                     raise ExtractorError(
