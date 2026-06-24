@@ -166,11 +166,67 @@ class BilibiliBaseIE(InfoExtractor):
         params['w_rid'] = hashlib.md5(f'{query}{self._get_wbi_key(video_id)}'.encode()).hexdigest()
         return params
 
+    @staticmethod
+    def _generate_buvid3():
+        # ref: PiliPlus IdUtils.genBuvid3
+        return f'{str(uuid.uuid4()).upper()}{str(random.randint(0, 99999)).zfill(5)}infoc'
+
+    @staticmethod
+    def _random_dm_img(min_length, max_length):
+        # ref: PiliPlus Utils.base64EncodeRandomString (anti-crawler dm fingerprint)
+        return base64.b64encode(bytes(
+            random.randint(0x26, 0x7E)
+            for _ in range(random.randint(min_length, max_length))
+        )).decode()[:-2]
+
+    def _init_buvid(self, video_id):
+        # Bilibili now returns 412 (Precondition Failed) on the webpage and -352
+        # (risk control) on the API unless a valid buvid fingerprint is present.
+        # Initialize buvid3/buvid4 cookies to bypass both. Ref: PiliPlus buvid3
+        # generation (IdUtils.genBuvid3) and activation (Request.buvidActive).
+        if self._get_cookies('https://www.bilibili.com').get('buvid3'):
+            return
+        spi = self._download_json(
+            'https://api.bilibili.com/x/frontend/finger/spi', video_id,
+            note='Obtaining buvid', errnote=False, fatal=False, headers=self._HEADERS) or {}
+        buvid3 = traverse_obj(spi, ('data', 'b_3', {str})) or self._generate_buvid3()
+        self._set_cookie('.bilibili.com', 'buvid3', buvid3)
+        buvid4 = traverse_obj(spi, ('data', 'b_4', {str}))
+        if buvid4:
+            self._set_cookie('.bilibili.com', 'buvid4', buvid4)
+        # ref: PiliPlus Request.buvidActive -> /x/internal/gaia-gateway/ExClimbWuzhi
+        rand_png_end = base64.b64encode(bytes(
+            [random.randint(0, 255) for _ in range(32)]
+            + [0, 0, 0, 0, 73, 69, 78, 68]
+            + [random.randint(0, 255) for _ in range(4)],
+        )).decode()
+        payload = json.dumps({
+            '3064': 1,
+            '39c8': '333.1387.fp.risk',
+            '3c43': {'adca': 'Linux', 'bfe9': rand_png_end[-50:]},
+        }, separators=(',', ':'))
+        self._download_json(
+            'https://api.bilibili.com/x/internal/gaia-gateway/ExClimbWuzhi', video_id,
+            note='Activating buvid', errnote=False, fatal=False,
+            data=json.dumps({'payload': payload}, separators=(',', ':')).encode('utf-8'),
+            headers={'Content-Type': 'application/json', **self._HEADERS})
+
     def _download_playinfo(self, bvid, cid, headers=None, query=None):
-        params = {'bvid': bvid, 'cid': cid, 'fnval': 4048, **(query or {})}
+        query = query or {}
+        # The wbi playurl endpoint 412s without the anti-crawler dm fingerprint
+        # parameters that the web player sends. Ref: PiliPlus VideoHttp.videoUrl.
+        params = {
+            'bvid': bvid, 'cid': cid, 'fnval': 4048, 'fourk': 1, 'fnver': 0,
+            'qn': 80, 'voice_balance': 0, 'gaia_source': 'pre-load',
+            'isGaiaAvoided': 'true', 'web_location': 1315873, 'dm_img_list': '[]',
+            'dm_img_str': self._random_dm_img(16, 64),
+            'dm_cover_img_str': self._random_dm_img(32, 128),
+            'dm_img_inter': '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
+            **query,
+        }
         if self.is_logged_in:
             params.pop('try_look', None)
-        if qn := params.get('qn'):
+        if qn := query.get('qn'):
             note = f'Downloading video format {qn} for cid {cid}'
         else:
             note = f'Downloading video formats for cid {cid}'
@@ -658,15 +714,17 @@ class BiliBiliIE(BilibiliBaseIE):
     def _real_extract(self, url):
         video_id, prefix = self._match_valid_url(url).group('id', 'prefix')
         headers = self.geo_verification_headers()
-        webpage, urlh = self._download_webpage_handle(url, video_id, headers=headers)
-        if not self._match_valid_url(urlh.url):
+        self._init_buvid(video_id)
+        webpage_handle = self._download_webpage_handle(url, video_id, headers=headers, fatal=False)
+        webpage, urlh = webpage_handle if webpage_handle else (None, None)
+        if urlh and not self._match_valid_url(urlh.url):
             return self.url_result(urlh.url)
 
         headers['Referer'] = url
 
-        initial_state = self._search_json(r'window\.__INITIAL_STATE__\s*=', webpage, 'initial state', video_id, default=None)
+        initial_state = self._search_json(r'window\.__INITIAL_STATE__\s*=', webpage or '', 'initial state', video_id, default=None)
         if not initial_state:
-            if self._search_json(r'\bwindow\._riskdata_\s*=', webpage, 'risk', video_id, default={}).get('v_voucher'):
+            if webpage and self._search_json(r'\bwindow\._riskdata_\s*=', webpage, 'risk', video_id, default={}).get('v_voucher'):
                 raise ExtractorError('You have exceeded the rate limit. Try again later', expected=True)
             query = {'platform': 'web'}
             prefix = prefix.upper()
@@ -676,12 +734,20 @@ class BiliBiliIE(BilibiliBaseIE):
                 query['aid'] = video_id
             detail = self._download_json(
                 'https://api.bilibili.com/x/web-interface/wbi/view/detail', video_id,
-                note='Downloading redirection URL', errnote='Failed to download redirection URL',
+                note='Downloading video info', errnote='Failed to download video info',
                 query=self._sign_wbi(query, video_id), headers=headers)
             new_url = traverse_obj(detail, ('data', 'View', 'redirect_url', {url_or_none}))
             if new_url and BiliBiliBangumiIE.suitable(new_url):
                 return self.url_result(new_url, BiliBiliBangumiIE)
-            raise ExtractorError('Unable to extract initial state')
+            # Bilibili no longer embeds __INITIAL_STATE__ in the webpage (it is
+            # rendered client-side); reconstruct it from the view/detail API.
+            # Ref: PiliPlus API-based video info extraction.
+            initial_state = {
+                'videoData': traverse_obj(detail, ('data', 'View', {dict})) or {},
+                'upData': traverse_obj(detail, ('data', 'View', 'owner', {dict})),
+                'tags': traverse_obj(detail, ('data', 'Tags', ..., {dict})) or [],
+                'elecFullInfo': traverse_obj(detail, ('data', 'elec', {dict})),
+            }
 
         if traverse_obj(initial_state, ('error', 'trueCode')) == -403:
             self.raise_login_required()
@@ -919,6 +985,7 @@ class BiliBiliBangumiIE(BilibiliBaseIE):
     def _real_extract(self, url):
         episode_id = self._match_id(url)
         headers = self.geo_verification_headers()
+        self._init_buvid(episode_id)
         webpage = self._download_webpage(url, episode_id, headers=headers)
 
         if '您所在的地区无法观看本片' in webpage:
@@ -1058,6 +1125,7 @@ class BiliBiliBangumiMediaIE(BilibiliBaseIE):
 
     def _real_extract(self, url):
         media_id = self._match_id(url)
+        self._init_buvid(media_id)
         webpage = self._download_webpage(url, media_id)
 
         initial_state = self._search_json(
@@ -1114,6 +1182,7 @@ class BiliBiliBangumiSeasonIE(BilibiliBaseIE):
 
     def _real_extract(self, url):
         ss_id = self._match_id(url)
+        self._init_buvid(ss_id)
         webpage = self._download_webpage(url, ss_id)
         metainfo = traverse_obj(
             self._search_json(r'<script[^>]+type="application/ld\+json"[^>]*>', webpage, 'info', ss_id),
