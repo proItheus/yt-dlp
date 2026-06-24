@@ -1645,13 +1645,13 @@ class BilibiliFavoritesListIE(BilibiliSpaceListBaseIE):
 
         list_info = self._download_json(
             f'https://api.bilibili.com/x/v3/fav/resource/list?media_id={fid}&pn=1&ps=20',
-            fid, note='Downloading favlist metadata')
+            fid, note='Downloading favlist metadata', headers=self._HEADERS)
         if list_info['code'] == -403:
             self.raise_login_required(msg='This is a private favorites list. You need to log in as its owner')
 
         entries = self._get_entries(self._download_json(
             f'https://api.bilibili.com/x/v3/fav/resource/ids?media_id={fid}',
-            fid, note='Download favlist entries'), 'data')
+            fid, note='Download favlist entries', headers=self._HEADERS), 'data')
 
         return self.playlist_result(entries, fid, **traverse_obj(list_info, ('data', 'info', {
             'title': ('title', {str}),
@@ -1936,7 +1936,7 @@ class BiliBiliSearchIE(SearchInfoExtractor):
                     'search_type': 'video',
                     'tids': 0,
                     'highlight': 1,
-                })['data'].get('result')
+                }, headers={'Referer': 'https://www.bilibili.com/'})['data'].get('result')
             if not videos:
                 break
             for video in videos:
