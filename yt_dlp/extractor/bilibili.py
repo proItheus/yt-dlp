@@ -424,12 +424,12 @@ class BiliBiliIE(BilibiliBaseIE):
                 'comment_count': int,
                 'upload_date': '20200516',
                 'view_count': int,
-                'description': 'md5:e3c401cf7bc363118d1783dd74068a68',
+                'description': 'md5:8d2739b7d216987a53c88bbb18200e0d',
                 'duration': 90.314,
                 '_old_archive_ids': ['bilibili 498159642_part1'],
             },
         }],
-        'params': {'playlist_items': '2'},
+        'params': {'skip_download': True},
     }, {
         'note': 'Specific page of Anthology',
         'url': 'https://www.bilibili.com/video/BV1bK411W797?p=1',
@@ -446,7 +446,7 @@ class BiliBiliIE(BilibiliBaseIE):
             'comment_count': int,
             'upload_date': '20200516',
             'view_count': int,
-            'description': 'md5:e3c401cf7bc363118d1783dd74068a68',
+            'description': 'md5:8d2739b7d216987a53c88bbb18200e0d',
             'duration': 90.314,
             '_old_archive_ids': ['bilibili 498159642_part1'],
         },
@@ -509,6 +509,8 @@ class BiliBiliIE(BilibiliBaseIE):
             'uploader_id': '528182630',
             'view_count': int,
             'like_count': int,
+            'comment_count': int,
+            'tags': list,
             'thumbnail': r're:^https?://.*\.(jpg|jpeg|png)$',
             '_old_archive_ids': ['bilibili 893839363_part1'],
         },
@@ -652,7 +654,7 @@ class BiliBiliIE(BilibiliBaseIE):
             'season_number': 4,
             'season_id': '105212',
             'episode': '引爆变革的起点',
-            'episode_number': 1,
+            'episode_number': 4,
             'episode_id': '1933368',
             'timestamp': 1752849001,
             'upload_date': '20250718',
@@ -1120,7 +1122,7 @@ class BiliBiliBangumiMediaIE(BilibiliBaseIE):
                 'thumbnail': r're:^https?://.*\.(jpg|jpeg|png)$',
             },
         }],
-        'params': {'playlist_items': '2'},
+        'params': {'skip_download': True},
     }]
 
     def _real_extract(self, url):
@@ -1177,7 +1179,7 @@ class BiliBiliBangumiSeasonIE(BilibiliBaseIE):
                 'thumbnail': r're:^https?://.*\.(jpg|jpeg|png)$',
             },
         }],
-        'params': {'playlist_items': '2'},
+        'params': {'skip_download': True},
     }]
 
     def _real_extract(self, url):
