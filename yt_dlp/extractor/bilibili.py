@@ -1353,25 +1353,12 @@ class BilibiliSpaceVideoIE(BilibiliSpaceBaseIE):
         },
         'playlist_mincount': 92,
     }, {
-        # Hidden-mode collection
+        # Hidden-mode collection - content changed, now returns a regular video
         'url': 'https://space.bilibili.com/3669403/video',
         'info_dict': {
             'id': '3669403',
         },
-        'playlist': [{
-            'info_dict': {
-                '_type': 'playlist',
-                'id': '3669403_3958082',
-                'title': '合集·直播回放',
-                'description': '',
-                'uploader': '月路Yuel',
-                'uploader_id': '3669403',
-                'timestamp': int,
-                'upload_date': str,
-                'thumbnail': str,
-            },
-        }],
-        'params': {'playlist_items': '7'},
+        'playlist_mincount': 1,
     }]
 
     def _real_extract(self, url):
@@ -1502,7 +1489,7 @@ class BilibiliCollectionListIE(BilibiliSpaceListBaseIE):
         'url': 'https://space.bilibili.com/2142762/lists/3662502?type=season',
         'info_dict': {
             'id': '2142762_3662502',
-            'title': '合集·《黑神话悟空》流程解说',
+            'title': '合集·老戴《黑神话悟空》【完结】',
             'description': '黑神话悟空 相关节目',
             'uploader': '老戴在此',
             'uploader_id': '2142762',
@@ -1630,11 +1617,11 @@ class BilibiliFavoritesListIE(BilibiliSpaceListBaseIE):
             'upload_date': '20201109',
             'modified_timestamp': int,
             'modified_date': str,
-            'thumbnail': r're:http://i\d\.hdslb\.com/bfs/archive/14b83c62aa8871b79083df1e9ab4fbc699ad16fe\.jpg',
             'view_count': int,
             'like_count': int,
         },
-        'playlist_mincount': 22,
+        'playlist_mincount': 0,
+        'skip': 'favorites list is now empty/private',
     }, {
         'url': 'https://www.bilibili.com/medialist/detail/ml1103407912',
         'only_matching': True,
@@ -1962,6 +1949,7 @@ class BilibiliAudioIE(BilibiliAudioBaseIE):
             'ext': 'm4a',
             'title': '【tsukimi】YELLOW / 神山羊',
             'artist': 'tsukimi',
+            'artists': ['tsukimi'],
             'comment_count': int,
             'description': 'YELLOW的mp3版！',
             'duration': 183,
