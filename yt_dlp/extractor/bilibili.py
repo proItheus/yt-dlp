@@ -775,7 +775,14 @@ class BiliBiliIE(BilibiliBaseIE):
         else:
             video_data = initial_state['videoData']
 
-        video_id, title = video_data['bvid'], video_data.get('title')
+        video_id = video_data.get('bvid') or f'{prefix.upper()}{video_id}'
+        title = video_data.get('title')
+        if not title:
+            # video_data may be empty when the view/detail API returns an error
+            # (e.g. rate-limited or risk control). Fall back to the pagelist API
+            # which may still work.
+            self.report_warning('Video metadata may be incomplete; view/detail API may have returned an error', only_once=True)
+            title = title or video_id
 
         # Bilibili anthologies are similar to playlists but all videos share the same video ID as the anthology itself.
         page_list_json = (not is_festival and traverse_obj(
@@ -799,6 +806,8 @@ class BiliBiliIE(BilibiliBaseIE):
         aid = video_data.get('aid')
         old_video_id = format_field(aid, None, f'%s_part{part_id or 1}')
         cid = traverse_obj(video_data, ('pages', part_id - 1, 'cid')) if part_id else video_data.get('cid')
+        if not cid and part_id and page_list_json:
+            cid = traverse_obj(page_list_json, (part_id - 1, 'cid'))
 
         festival_info = {}
         if is_festival:
