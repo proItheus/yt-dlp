@@ -19,7 +19,7 @@ from devscripts.utils import read_file, write_file
 
 README_FILE = 'README.md'
 
-OPTIONS_START = 'General Options:'
+OPTIONS_START = '# General Options'
 OPTIONS_END = 'CONFIGURATION'
 EPILOG_START = 'See full documentation'
 ALLOWED_OVERSHOOT = 2
