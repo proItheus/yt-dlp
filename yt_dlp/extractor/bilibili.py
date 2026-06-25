@@ -383,7 +383,17 @@ class BiliBiliIE(BilibiliBaseIE):
             '_old_archive_ids': ['bilibili 8903802_part1'],
         },
     }, {
-        'note': 'old av URL version',
+        'note': 'try_look enables 1080p without login',
+        'url': 'https://www.bilibili.com/video/BV13x41117TL',
+        'info_dict': {
+            'id': 'BV13x41117TL',
+            'ext': 'mp4',
+            'title': '阿滴英文｜英文歌分享#6 "Closer',
+            'duration': 554.117,
+        },
+        'params': {'skip_download': True},
+    }, {
+        'note': 'av URL version (old format)',
         'url': 'http://www.bilibili.com/video/av1074402/',
         'info_dict': {
             'id': 'BV11x411K7CN',
