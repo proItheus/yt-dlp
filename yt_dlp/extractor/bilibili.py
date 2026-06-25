@@ -47,7 +47,12 @@ from ..utils import (
 
 
 class BilibiliBaseIE(InfoExtractor):
-    _HEADERS = {'Referer': 'https://www.bilibili.com/'}
+    _HEADERS = {
+        'Referer': 'https://www.bilibili.com/',
+        'Sec-CH-UA': '"Google Chrome";v="148", "Chromium";v="148", "Not)A;Brand";v="24"',
+        'Sec-CH-UA-Mobile': '?0',
+        'Sec-CH-UA-Platform': '"Windows"',
+    }
     _FORMAT_ID_RE = re.compile(r'-(\d+)\.m4s\?')
     _WBI_KEY_CACHE_TIMEOUT = 30  # exact expire timeout is unclear, use 30s for one session
     _wbi_key_cache = {}
@@ -194,6 +199,10 @@ class BilibiliBaseIE(InfoExtractor):
         buvid4 = traverse_obj(spi, ('data', 'b_4', {str}))
         if buvid4:
             self._set_cookie('.bilibili.com', 'buvid4', buvid4)
+        # buvid_fp — browser-side JS fingerprint, used as a fallback for
+        # bot detection when buvid3/buvid4 are not trusted. Ref: upstream #16889.
+        if not self._get_cookies('https://www.bilibili.com').get('buvid_fp'):
+            self._set_cookie('.bilibili.com', 'buvid_fp', hashlib.md5(uuid.uuid4().bytes).hexdigest())
         # ref: PiliPlus Request.buvidActive -> /x/internal/gaia-gateway/ExClimbWuzhi
         rand_png_end = base64.b64encode(bytes(
             [random.randint(0, 255) for _ in range(32)]
@@ -232,9 +241,51 @@ class BilibiliBaseIE(InfoExtractor):
         else:
             note = f'Downloading video formats for cid {cid}'
 
-        return self._download_json(
-            'https://api.bilibili.com/x/player/wbi/playurl', bvid,
-            query=self._sign_wbi(params, bvid), headers=headers, note=note)['data']
+        # Bilibili's anti-bot check requires Origin + buvid_fp for api.bilibili.com calls.
+        # Use a fresh buvid_fp cookie; buvid3/buvid4 from _init_buvid can trigger v_voucher
+        # on rate-limited IPs, while a fresh buvid_fp alone is more likely to pass.
+        # Ref: upstream PR #16889.
+        fresh_fp = hashlib.md5(uuid.uuid4().bytes).hexdigest()
+        api_headers = {
+            **(headers or {}),
+            'Accept': 'application/json, text/plain, */*',
+            'Origin': 'https://www.bilibili.com',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Site': 'same-site',
+            'Cookie': f'buvid_fp={fresh_fp}',
+        }
+
+        def fetch():
+            try:
+                return self._download_json(
+                    'https://api.bilibili.com/x/player/wbi/playurl', bvid,
+                    query=self._sign_wbi(params, bvid), headers=api_headers, note=note)['data']
+            except ExtractorError as e:
+                if isinstance(e.cause, HTTPError) and e.cause.status == 412:
+                    raise ExtractorError(
+                        'Request blocked by Bilibili (HTTP 412). '
+                        'Your IP may be rate-limited; try again later or use a VPN/proxy.',
+                        expected=True) from e
+                raise
+
+        play_info = fetch()
+        if play_info.get('v_voucher'):
+            # buvid_fp was rejected; retry with new fingerprints (up to 3 attempts total).
+            for _ in range(2):
+                api_headers['Cookie'] = f'buvid_fp={hashlib.md5(uuid.uuid4().bytes).hexdigest()}'
+                play_info = self._download_json(
+                    'https://api.bilibili.com/x/player/wbi/playurl', bvid,
+                    query=self._sign_wbi(params, bvid), headers=api_headers,
+                    note=f'{note} (retry)')['data']
+                if not play_info.get('v_voucher'):
+                    break
+        if play_info.get('v_voucher'):
+            raise ExtractorError(
+                'Bilibili requires cookie verification to play this video. '
+                f'Use --cookies-from-browser or --cookies to pass your browser cookies. {self._login_hint()}',
+                expected=True)
+        return play_info
 
     def json2srt(self, json_data):
         srt_data = ''
@@ -726,7 +777,9 @@ class BiliBiliIE(BilibiliBaseIE):
 
     def _real_extract(self, url):
         video_id, prefix = self._match_valid_url(url).group('id', 'prefix')
-        headers = self.geo_verification_headers()
+        headers = {**self.geo_verification_headers(), **self._HEADERS}
+        if not self._get_cookies('https://www.bilibili.com').get('buvid_fp'):
+            self._set_cookie('.bilibili.com', 'buvid_fp', hashlib.md5(uuid.uuid4().bytes).hexdigest())
         self._init_buvid(video_id)
         webpage_handle = self._download_webpage_handle(url, video_id, headers=headers, fatal=False)
         webpage, urlh = webpage_handle if webpage_handle else (None, None)
@@ -1006,7 +1059,9 @@ class BiliBiliBangumiIE(BilibiliBaseIE):
 
     def _real_extract(self, url):
         episode_id = self._match_id(url)
-        headers = self.geo_verification_headers()
+        headers = {**self.geo_verification_headers(), **self._HEADERS}
+        if not self._get_cookies('https://www.bilibili.com').get('buvid_fp'):
+            self._set_cookie('.bilibili.com', 'buvid_fp', hashlib.md5(uuid.uuid4().bytes).hexdigest())
         self._init_buvid(episode_id)
         webpage = self._download_webpage(url, episode_id, headers=headers)
 
@@ -1147,8 +1202,10 @@ class BiliBiliBangumiMediaIE(BilibiliBaseIE):
 
     def _real_extract(self, url):
         media_id = self._match_id(url)
+        if not self._get_cookies('https://www.bilibili.com').get('buvid_fp'):
+            self._set_cookie('.bilibili.com', 'buvid_fp', hashlib.md5(uuid.uuid4().bytes).hexdigest())
         self._init_buvid(media_id)
-        webpage = self._download_webpage(url, media_id)
+        webpage = self._download_webpage(url, media_id, headers=self._HEADERS)
 
         initial_state = self._search_json(
             r'window\.__INITIAL_STATE__\s*=', webpage, 'initial_state', media_id)
@@ -1204,8 +1261,10 @@ class BiliBiliBangumiSeasonIE(BilibiliBaseIE):
 
     def _real_extract(self, url):
         ss_id = self._match_id(url)
+        if not self._get_cookies('https://www.bilibili.com').get('buvid_fp'):
+            self._set_cookie('.bilibili.com', 'buvid_fp', hashlib.md5(uuid.uuid4().bytes).hexdigest())
         self._init_buvid(ss_id)
-        webpage = self._download_webpage(url, ss_id)
+        webpage = self._download_webpage(url, ss_id, headers=self._HEADERS)
         metainfo = traverse_obj(
             self._search_json(r'<script[^>]+type="application/ld\+json"[^>]*>', webpage, 'info', ss_id),
             ('itemListElement', ..., {
