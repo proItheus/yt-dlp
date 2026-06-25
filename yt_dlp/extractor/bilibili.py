@@ -224,8 +224,9 @@ class BilibiliBaseIE(InfoExtractor):
             'dm_img_inter': '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
             **query,
         }
-        if self.is_logged_in:
-            params.pop('try_look', None)
+        # 免登录查看1080p (ref: PiliPlus VideoHttp.videoUrl tryLook)
+        if not self.is_logged_in:
+            params['try_look'] = 1
         if qn := query.get('qn'):
             note = f'Downloading video format {qn} for cid {cid}'
         else:
@@ -347,7 +348,7 @@ class BilibiliBaseIE(InfoExtractor):
             ('data', 'interaction', 'graph_version', {int_or_none}))
         cid_edges = self._get_divisions(video_id, graph_version, {1: {'cid': cid}}, 1)
         for cid, edges in cid_edges.items():
-            play_info = self._download_playinfo(video_id, cid, headers=headers, query={'try_look': 1})
+            play_info = self._download_playinfo(video_id, cid, headers=headers)
             yield {
                 **metainfo,
                 'id': f'{video_id}_{cid}',
@@ -832,7 +833,7 @@ class BiliBiliIE(BilibiliBaseIE):
                 self._search_json(r'window\.__playinfo__\s*=', webpage, 'play info', video_id, default=None),
                 ('data', {dict}))
         if not play_info:
-            play_info = self._download_playinfo(video_id, cid, headers=headers, query={'try_look': 1})
+            play_info = self._download_playinfo(video_id, cid, headers=headers)
         formats = self.extract_formats(play_info)
 
         if video_data.get('is_upower_exclusive'):
